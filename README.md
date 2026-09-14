@@ -12,6 +12,12 @@ Designed specifically for Apple hardware running Linux (MacBook Pro with T2 / Ap
 
 ---
 
+<p align="center">
+  <img src="preview.png" alt="AlDente for Omarchy Preview" width="480">
+</p>
+
+---
+
 ## Key Features
 
 ### 1. Hardware Charge Limiter with Genuine AC Bypass
@@ -84,10 +90,15 @@ Designed specifically for Apple hardware running Linux (MacBook Pro with T2 / Ap
    sudo ./setup-hardware.sh
    ```
 
-4. Reload Omarchy Shell:
-   ```bash
-   omarchy restart shell
-   ```
+### Removal / Uninstallation
+
+To safely remove the plugin, service, and CLI shortcuts:
+```bash
+cd ~/.config/omarchy/plugins/aldente
+./uninstall.sh
+# Optional: To also remove system boot services and reset hardware limit to 100%:
+sudo ./uninstall.sh
+```
 
 ---
 
