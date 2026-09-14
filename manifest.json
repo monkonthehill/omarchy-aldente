@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "monk.aldente",
+  "name": "AlDente",
+  "version": "1.0.0",
+  "author": "monk",
+  "license": "MIT",
+  "description": "macOS-like battery charge limiter (80% AC bypass), sailing mode, heat protection, health analysis, and daily charge graphs.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "AlDente",
+    "description": "AlDente charge threshold, AC bypass, battery health analytics, and daily graphs",
+    "category": "System",
+    "aliases": ["aldente", "battery", "charge-limiter", "power"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

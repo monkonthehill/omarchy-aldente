@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SYSFS_APPLE="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
+SYSFS_GENERIC=$(ls /sys/class/power_supply/BAT*/charge_control_end_threshold 2>/dev/null | head -n 1 || true)
+
+get_target_file() {
+  if [[ -f "$SYSFS_APPLE" ]]; then
+    echo "$SYSFS_APPLE"
+  elif [[ -n "$SYSFS_GENERIC" && -f "$SYSFS_GENERIC" ]]; then
+    echo "$SYSFS_GENERIC"
+  else
+    echo ""
+  fi
+}
+
+cmd="${1:-}"
+
+case "$cmd" in
+  set-limit)
+    limit="${2:-}"
+    if ! [[ "$limit" =~ ^[0-9]+$ ]] || (( limit < 20 || limit > 100 )); then
+      echo "Error: Charge limit must be an integer between 20 and 100" >&2
+      exit 1
+    fi
+    target=$(get_target_file)
+    if [[ -z "$target" ]]; then
+      echo "Error: No supported hardware charge limit interface found in sysfs" >&2
+      exit 2
+    fi
+    echo "$limit" > "$target"
+    echo "Hardware charge limit set to ${limit}% on $target"
+    ;;
+
+  fix-perms)
+    target=$(get_target_file)
+    if [[ -n "$target" && -f "$target" ]]; then
+      chmod 0666 "$target"
+      echo "Permissions set to 0666 on $target"
+    fi
+    ;;
+
+  install-tmpfiles)
+    target=$(get_target_file)
+    if [[ -n "$target" ]]; then
+      mkdir -p /etc/tmpfiles.d
+      echo "z $target 0666 - - -" > /etc/tmpfiles.d/aldente-charge-limit.conf
+      chmod 0644 /etc/tmpfiles.d/aldente-charge-limit.conf
+      echo "Created /etc/tmpfiles.d/aldente-charge-limit.conf"
+    fi
+    ;;
+
+  *)
+    echo "Usage: aldente-root {set-limit <20-100> | fix-perms | install-tmpfiles}" >&2
+    exit 1
+    ;;
+esac

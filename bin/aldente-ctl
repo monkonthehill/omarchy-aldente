@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""
+aldente-ctl: CLI entry point for AlDente on Omarchy.
+"""
+
+import sys
+import argparse
+from pathlib import Path
+
+# Add script directory to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import aldente_core as core
+
+def main():
+    parser = argparse.ArgumentParser(description="AlDente Battery Guardian for Omarchy")
+    subparsers = parser.add_subparsers(dest="command")
+
+    sub_status = subparsers.add_parser("status", help="Show live battery status and limits")
+    sub_status.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
+    sub_limit = subparsers.add_parser("set-limit", help="Set hardware charge limit (20-100)")
+    sub_limit.add_argument("percentage", type=int, help="Limit percentage")
+
+    sub_sailing = subparsers.add_parser("sailing", help="Toggle or configure sailing mode")
+    sub_sailing.add_argument("action", choices=["on", "off", "toggle"], default="toggle", nargs="?")
+    sub_sailing.add_argument("--delta", type=int, default=None, help="Sailing hysteresis delta percentage")
+
+    sub_topup = subparsers.add_parser("top-up", help="Toggle full (100%%) temporary top-up mode")
+    sub_topup.add_argument("action", choices=["on", "off", "toggle"], default="toggle", nargs="?")
+
+    sub_heat = subparsers.add_parser("heat-guard", help="Toggle thermal protection guard")
+    sub_heat.add_argument("action", choices=["on", "off", "toggle"], default="toggle", nargs="?")
+    sub_heat.add_argument("--threshold", type=float, default=None, help="Cutoff temp in °C")
+
+    sub_report = subparsers.add_parser("report", help="Generate macOS-style battery analysis report")
+    sub_report.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    sub_history = subparsers.add_parser("history", help="Show daily charging and session stats")
+    sub_history.add_argument("--json", action="store_true")
+
+    args = parser.parse_args()
+
+    if not args.command or args.command == "status":
+        core.cmd_status(as_json=getattr(args, "json", False))
+    elif args.command == "set-limit":
+        core.cmd_set_limit(args.percentage)
+    elif args.command == "sailing":
+        core.cmd_sailing(args.action, getattr(args, "delta", None))
+    elif args.command == "top-up":
+        core.cmd_top_up(args.action)
+    elif args.command == "heat-guard":
+        core.cmd_heat_guard(args.action, getattr(args, "threshold", None))
+    elif args.command == "report":
+        core.cmd_report(fmt=args.format)
+    elif args.command == "history":
+        import json
+        stats = core.get_stats()
+        print(json.dumps(stats, indent=2))
+
+if __name__ == "__main__":
+    main()

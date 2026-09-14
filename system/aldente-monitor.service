@@ -1,0 +1,13 @@
+[Unit]
+Description=AlDente Battery Guardian and Telemetry Daemon
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.config/omarchy/plugins/aldente/bin/aldente-daemon
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=default.target
