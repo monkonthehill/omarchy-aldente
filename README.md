@@ -26,8 +26,8 @@ Designed specifically for Apple hardware running Linux (MacBook Pro with T2 / Ap
 - Writes directly to the Apple SMC charging register (`battery_charge_limit`) or generic Linux ACPI thresholds.
 
 ### 2. Hardened Root Broker & Boot Persistence
-- Hardware charge limits are brokered through a root-owned, strictly validated helper (`/usr/local/libexec/aldente-set-limit`), keeping the kernel sysfs node securely root-owned (mode 0644).
-- Incorporates `udev` rules and a system boot service (`aldente-hardware.service`) to automatically restore the user's saved threshold on boot and wake.
+- Hardware charge limits are brokered through a root-owned, strictly validated helper (`/usr/local/libexec/aldente-set-limit`), keeping the kernel sysfs node securely root-owned with verified non-world-writable permissions.
+- Incorporates `udev` device event forwarding and a systemd service (`aldente-hardware.service`) to automatically restore the user's saved threshold on boot and wake.
 - **Run setup once with sudo**: installs the root helper and system services; normal daily limit changes require no password prompts.
 
 ### 3. Sailing Mode (Hysteresis Buffer)

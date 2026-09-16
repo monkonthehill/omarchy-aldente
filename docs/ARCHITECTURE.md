@@ -11,9 +11,10 @@ graph TD
     A[Quickshell UI / Omarchy Shell] -->|IPC / Process Calls| B[aldente-ctl CLI]
     B -->|Shared Core Logic| C[aldente_core.py]
     D[aldente-daemon Background Service] -->|Polling & Watchdog| C
-    C -->|Read Telemetry 0644| E[/sys/class/power_supply/BAT0/]
-    C -->|Invoke sudo/pkexec| HLP[/usr/local/libexec/aldente-set-limit]
-    HLP -->|Strictly Validated Write 20-100| F[Root-Owned Sysfs Register 0644]
+    C -->|Read Telemetry| E[/sys/class/power_supply/BAT0/]
+    C -->|Invoke sudo -n| HLP[/usr/local/libexec/aldente-set-limit]
+    HLP -->|Strictly Validated Write 20-100| F[Root-Owned Sysfs Register]
+    HLP -->|Atomic State Sync| CONF[/etc/aldente.conf]
     
     subgraph Hardware Layer
         F --> G[Apple SMC Controller / T2]
@@ -21,8 +22,8 @@ graph TD
     end
     
     subgraph Persistence Layer
-        I[aldente-hardware.service] -->|Boot Restoral --restore| HLP
-        J[udev Rules] -->|Device Event Trigger --restore| HLP
+        I[aldente-hardware.service] -->|Boot & Wake Restoral --restore| HLP
+        J[udev Rules] -->|Forward Device Event TAG=systemd| I
     end
 ```
 

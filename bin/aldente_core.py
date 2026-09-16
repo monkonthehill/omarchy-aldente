@@ -43,7 +43,16 @@ def load_config():
                 return cfg
         except Exception:
             pass
-    return DEFAULT_CONFIG.copy()
+    cfg = DEFAULT_CONFIG.copy()
+    conf_file = Path("/etc/aldente.conf")
+    if conf_file.is_file() and not conf_file.is_symlink():
+        try:
+            val = int(conf_file.read_text().strip())
+            if 20 <= val <= 100:
+                cfg["charge_limit"] = val
+        except Exception:
+            pass
+    return cfg
 
 def save_config(cfg):
     with open(CONFIG_FILE, "w") as f:
@@ -75,41 +84,24 @@ def write_hardware_limit(limit):
     if not f or not f.exists():
         return False, "No supported hardware charge limit register found in sysfs"
 
-    # 1. Direct write attempt (if root or process has write access)
-    try:
-        f.write_text(f"{limit}\n")
-        val = read_hardware_limit()
-        if val == limit:
-            return True, "Direct write succeeded and verified"
-    except PermissionError:
-        pass
-    except Exception:
-        pass
-
-    # 2. Privileged helper attempt via fixed root-owned helper
+    # All hardware charge limit writes are strictly brokered through the root-owned helper
     helper = Path("/usr/local/libexec/aldente-set-limit")
-    if helper.exists() and os.access(helper, os.X_OK):
-        # Try sudo -n
-        try:
-            res = subprocess.run(["sudo", "-n", str(helper), str(limit)],
-                                 capture_output=True, text=True, timeout=5)
-            if res.returncode == 0 and read_hardware_limit() == limit:
-                return True, "Set via sudo helper and verified"
-        except Exception:
-            pass
+    if not helper.exists() or not os.access(helper, os.X_OK):
+        cur = read_hardware_limit()
+        return False, f"Privileged broker {helper} not found or not executable (Current register: {cur}%). Run: sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh"
 
-        # Try pkexec
-        try:
-            res = subprocess.run(["pkexec", str(helper), str(limit)],
-                                 capture_output=True, text=True, timeout=10)
-            if res.returncode == 0 and read_hardware_limit() == limit:
-                return True, "Set via pkexec helper and verified"
-        except Exception:
-            pass
-
-    # Read current actual value
-    cur = read_hardware_limit()
-    return False, f"Permission denied writing to {f} (Current sysfs register remains {cur}%). Run: sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh"
+    cmd = [str(helper), str(limit)] if os.geteuid() == 0 else ["sudo", "-n", str(helper), str(limit)]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            val = read_hardware_limit()
+            if val == limit:
+                return True, f"Hardware charge limit set to {limit}% and verified"
+            return False, f"Broker succeeded but readback was {val}% (expected {limit}%)"
+        err = res.stderr.strip() or res.stdout.strip() or f"exit code {res.returncode}"
+        return False, f"Failed to set limit via broker: {err}"
+    except Exception as e:
+        return False, f"Execution error invoking broker: {e}"
 
 def get_battery_telemetry():
     """Reads sysfs & upower data and returns structured telemetry."""

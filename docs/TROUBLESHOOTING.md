@@ -13,14 +13,14 @@ The UI displays a notice:
 > *Run once in terminal: sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh*
 
 ### Cause
-The Apple SMC kernel register `/sys/devices/.../battery_charge_limit` is owned by `root:root` with permissions `0644`. Because userspace processes cannot modify this register without elevated permissions, your requested limit (e.g. 80%) has not yet been applied to hardware.
+The Apple SMC kernel register `/sys/devices/.../battery_charge_limit` is owned by `root` with restricted permissions. Because unprivileged userspace processes cannot modify kernel registers directly, your requested limit (e.g. 80%) cannot be applied without the secure broker.
 
 ### Solution
 Execute the hardware setup script once:
 ```bash
 sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh
 ```
-This installs the root-owned helper `/usr/local/libexec/aldente-set-limit` and boot services to securely broker writes while keeping the sysfs node root-owned (mode 0644).
+This installs the root-owned helper `/usr/local/libexec/aldente-set-limit` and systemd persistence to securely broker writes while keeping the sysfs node root-owned and non-world-writable.
 
 ---
 

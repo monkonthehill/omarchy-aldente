@@ -23,36 +23,62 @@ if [[ $# -ne 1 ]]; then
   exit 1
 fi
 
-# 4. Locate hardware charge limit register safely (globbing without external binaries)
+# 4. Locate and dynamically verify hardware charge limit register
 SYSFS_APPLE="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
-TARGET=""
+CANDIDATE=""
 
 if [[ -f "$SYSFS_APPLE" ]]; then
-  TARGET="$SYSFS_APPLE"
+  CANDIDATE="$SYSFS_APPLE"
 else
   for node in /sys/class/power_supply/BAT*/charge_control_end_threshold; do
     if [[ -f "$node" ]]; then
-      TARGET="$node"
+      CANDIDATE="$node"
       break
     fi
   done
 fi
 
-if [[ -z "$TARGET" ]]; then
+if [[ -z "$CANDIDATE" ]]; then
   echo "Error: No supported hardware charge limit register found in sysfs." >&2
   exit 1
 fi
 
+REAL_TARGET=$(realpath "$CANDIDATE" 2>/dev/null || true)
+if [[ -z "$REAL_TARGET" || ! "$REAL_TARGET" =~ ^/sys/ ]]; then
+  echo "Security error: Hardware register does not resolve to a valid /sys path ($REAL_TARGET)" >&2
+  exit 1
+fi
+
+# Dynamically verify root ownership
+TARGET_UID=$(stat -c "%u" "$REAL_TARGET" 2>/dev/null || echo "-1")
+if [[ "$TARGET_UID" -ne 0 ]]; then
+  echo "Security error: Target register $REAL_TARGET is not owned by root (UID: $TARGET_UID)" >&2
+  exit 1
+fi
+
+# Dynamically verify permissions: must not be world-writable
+TARGET_PERM=$(stat -c "%a" "$REAL_TARGET" 2>/dev/null || echo "777")
+if [[ "$TARGET_PERM" =~ [2367]$ ]]; then
+  chmod o-w "$REAL_TARGET" 2>/dev/null || true
+  TARGET_PERM=$(stat -c "%a" "$REAL_TARGET" 2>/dev/null || echo "777")
+  if [[ "$TARGET_PERM" =~ [2367]$ ]]; then
+    echo "Security error: Target register $REAL_TARGET is world-writable (mode: $TARGET_PERM)" >&2
+    exit 1
+  fi
+fi
+
+TARGET="$REAL_TARGET"
 CONF_FILE="/etc/aldente.conf"
 ACTION="$1"
 
-# 5. Handle --restore action (boot / udev / event recovery)
+# 5. Handle --restore action (boot / wake / udev event recovery)
 if [[ "$ACTION" == "--restore" ]]; then
   TARGET_LIMIT="80"
-  if [[ -f "$CONF_FILE" ]]; then
-    # Verify root ownership before trusting the persistence file
-    CONF_OWNER=$(stat -c "%u" "$CONF_FILE" 2>/dev/null || echo "1")
-    if [[ "$CONF_OWNER" == "0" ]]; then
+  if [[ -f "$CONF_FILE" && ! -L "$CONF_FILE" ]]; then
+    CONF_OWNER=$(stat -c "%u" "$CONF_FILE" 2>/dev/null || echo "-1")
+    CONF_PERM=$(stat -c "%a" "$CONF_FILE" 2>/dev/null || echo "777")
+    # Must be owned by root (UID 0) and not world-writable
+    if [[ "$CONF_OWNER" == "0" && ! "$CONF_PERM" =~ [2367]$ ]]; then
       STORED=$(head -n 1 "$CONF_FILE" 2>/dev/null | tr -d ' \r\n' || true)
       if [[ "$STORED" =~ ^([2-9][0-9]|100)$ ]]; then
         TARGET_LIMIT="$STORED"
@@ -73,18 +99,18 @@ fi
 LIMIT="$ACTION"
 echo "$LIMIT" > "$TARGET"
 
-# 7. Persist validated limit to /etc/aldente.conf atomically
-TMP_CONF=$(mktemp /etc/aldente.conf.tmp.XXXXXX 2>/dev/null || true)
-if [[ -n "$TMP_CONF" && -f "$TMP_CONF" ]]; then
-  echo "$LIMIT" > "$TMP_CONF"
-  chmod 0644 "$TMP_CONF"
-  chown root:root "$TMP_CONF"
-  mv -f "$TMP_CONF" "$CONF_FILE"
-else
-  echo "$LIMIT" > "$CONF_FILE"
-  chmod 0644 "$CONF_FILE"
-  chown root:root "$CONF_FILE" 2>/dev/null || true
+# 7. Atomically persist validated limit to root-owned /etc/aldente.conf
+TMP_CONF=$(mktemp -p /etc .aldente.conf.tmp.XXXXXX 2>/dev/null || mktemp /tmp/aldente.conf.tmp.XXXXXX)
+echo "$LIMIT" > "$TMP_CONF"
+chmod 0644 "$TMP_CONF"
+chown 0:0 "$TMP_CONF"
+
+# Prevent symlink traversal on replacement
+if [[ -L "$CONF_FILE" ]]; then
+  rm -f "$CONF_FILE"
 fi
+
+mv -f "$TMP_CONF" "$CONF_FILE"
 
 echo "Hardware charge limit set to ${LIMIT}% on $TARGET"
 exit 0
