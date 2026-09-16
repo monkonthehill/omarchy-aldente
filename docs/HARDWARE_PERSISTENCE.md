@@ -40,7 +40,9 @@ Because the Linux kernel resets the SMC register back to `100%` on cold boot or 
 ### A. Root-Owned Helper (`/usr/local/libexec/aldente-set-limit`)
 - Installed to `/usr/local/libexec/aldente-set-limit` with mode `0755 root:root`.
 - Strictly validates argument matching `^([2-9][0-9]|100)$` or `--restore`.
-- `--restore` reads the user's saved configuration from `~/.local/state/omarchy/aldente/config.json`, validates the threshold integer, and writes it to sysfs.
+- Sanitizes environment (`PATH`, unsets `IFS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`).
+- Persists valid limits to root-owned `/etc/aldente.conf` (`0644 root:root`).
+- `--restore` reads strictly from `/etc/aldente.conf`, completely isolated from unprivileged user home directories.
 
 ### B. Systemd Boot Service (`/etc/systemd/system/aldente-hardware.service`)
 An enabled system-level oneshot service running as root:

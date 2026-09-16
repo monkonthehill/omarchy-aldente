@@ -38,6 +38,7 @@ if [[ $EUID -eq 0 ]]; then
   rm -f /usr/share/polkit-1/actions/org.omarchy.aldente.policy
   rm -f /etc/udev/rules.d/99-aldente-charge-limit.rules
   rm -f /etc/sudoers.d/aldente-charge-limit
+  rm -f /etc/aldente.conf
   rm -f /etc/tmpfiles.d/aldente-charge-limit.conf
   rm -f /usr/local/bin/aldente-hardware-sync
   systemctl daemon-reload 2>/dev/null || true

@@ -5,19 +5,37 @@
 
 set -euo pipefail
 
+# 1. Sanitize execution environment
+export PATH="/usr/bin:/bin"
+unset IFS
+unset LD_PRELOAD LD_LIBRARY_PATH
+
+# 2. Enforce root privileges
 if [[ $EUID -ne 0 ]]; then
   echo "Error: aldente-set-limit must be executed with root privileges." >&2
   exit 1
 fi
 
-SYSFS_APPLE="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
-SYSFS_GENERIC=$(ls /sys/class/power_supply/BAT*/charge_control_end_threshold 2>/dev/null | head -n 1 || true)
+# 3. Enforce exactly one argument
+if [[ $# -ne 1 ]]; then
+  echo "Error: aldente-set-limit requires exactly one argument." >&2
+  echo "Usage: /usr/local/libexec/aldente-set-limit <20..100|--restore>" >&2
+  exit 1
+fi
 
+# 4. Locate hardware charge limit register safely (globbing without external binaries)
+SYSFS_APPLE="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
 TARGET=""
+
 if [[ -f "$SYSFS_APPLE" ]]; then
   TARGET="$SYSFS_APPLE"
-elif [[ -n "$SYSFS_GENERIC" && -f "$SYSFS_GENERIC" ]]; then
-  TARGET="$SYSFS_GENERIC"
+else
+  for node in /sys/class/power_supply/BAT*/charge_control_end_threshold; do
+    if [[ -f "$node" ]]; then
+      TARGET="$node"
+      break
+    fi
+  done
 fi
 
 if [[ -z "$TARGET" ]]; then
@@ -25,25 +43,28 @@ if [[ -z "$TARGET" ]]; then
   exit 1
 fi
 
-ACTION="${1:-}"
+CONF_FILE="/etc/aldente.conf"
+ACTION="$1"
 
+# 5. Handle --restore action (boot / udev / event recovery)
 if [[ "$ACTION" == "--restore" ]]; then
   TARGET_LIMIT="80"
-  for cf in /home/*/.local/state/omarchy/aldente/config.json; do
-    if [[ -f "$cf" ]]; then
-      LIM=$(grep -Po '"charge_limit":\s*\K\d+' "$cf" 2>/dev/null || true)
-      if [[ -n "$LIM" && "$LIM" =~ ^([2-9][0-9]|100)$ ]]; then
-        TARGET_LIMIT="$LIM"
-        break
+  if [[ -f "$CONF_FILE" ]]; then
+    # Verify root ownership before trusting the persistence file
+    CONF_OWNER=$(stat -c "%u" "$CONF_FILE" 2>/dev/null || echo "1")
+    if [[ "$CONF_OWNER" == "0" ]]; then
+      STORED=$(head -n 1 "$CONF_FILE" 2>/dev/null | tr -d ' \r\n' || true)
+      if [[ "$STORED" =~ ^([2-9][0-9]|100)$ ]]; then
+        TARGET_LIMIT="$STORED"
       fi
     fi
-  done
+  fi
   echo "$TARGET_LIMIT" > "$TARGET"
   echo "Restored hardware charge limit to ${TARGET_LIMIT}% on $TARGET"
   exit 0
 fi
 
-# Strictly validate argument: integer between 20 and 100
+# 6. Strictly validate numeric threshold: integer between 20 and 100
 if [[ ! "$ACTION" =~ ^([2-9][0-9]|100)$ ]]; then
   echo "Error: Invalid argument '$ACTION'. Must be an integer between 20 and 100, or '--restore'." >&2
   exit 1
@@ -51,5 +72,19 @@ fi
 
 LIMIT="$ACTION"
 echo "$LIMIT" > "$TARGET"
+
+# 7. Persist validated limit to /etc/aldente.conf atomically
+TMP_CONF=$(mktemp /etc/aldente.conf.tmp.XXXXXX 2>/dev/null || true)
+if [[ -n "$TMP_CONF" && -f "$TMP_CONF" ]]; then
+  echo "$LIMIT" > "$TMP_CONF"
+  chmod 0644 "$TMP_CONF"
+  chown root:root "$TMP_CONF"
+  mv -f "$TMP_CONF" "$CONF_FILE"
+else
+  echo "$LIMIT" > "$CONF_FILE"
+  chmod 0644 "$CONF_FILE"
+  chown root:root "$CONF_FILE" 2>/dev/null || true
+fi
+
 echo "Hardware charge limit set to ${LIMIT}% on $TARGET"
 exit 0

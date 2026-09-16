@@ -9,8 +9,7 @@ mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user" "$HOME/.local/state/oma
 
 # 1. Make scripts executable
 chmod +x "$plugin_dir/bin/aldente-ctl" "$plugin_dir/bin/aldente-daemon" \
-         "$plugin_dir/system/aldente-set-limit" "$plugin_dir/setup-hardware.sh" \
-         "$plugin_dir/uninstall.sh"
+         "$plugin_dir/setup-hardware.sh" "$plugin_dir/uninstall.sh"
 
 ln -sf "$plugin_dir/bin/aldente-ctl" "$HOME/.local/bin/aldente"
 ln -sf "$plugin_dir/bin/aldente-ctl" "$HOME/.local/bin/aldente-ctl"
