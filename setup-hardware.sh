@@ -7,6 +7,8 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
 SYSFS_APPLE="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
 SYSFS_GENERIC=$(ls /sys/class/power_supply/BAT*/charge_control_end_threshold 2>/dev/null | head -n 1 || true)
 
@@ -22,72 +24,36 @@ if [[ -z "$TARGET" ]]; then
   exit 1
 fi
 
-echo "=== Configuring AlDente Hardware Charge Limit ==="
-echo "Target Register: $TARGET"
+echo "=== Hardening AlDente Hardware Charge Limit ==="
+echo "Target Register: $TARGET (kept root-owned, mode 0644)"
 
-# 1. Immediate permissions
-chmod 0666 "$TARGET"
-echo "[1/6] Granted immediate userspace write access (chmod 0666)"
+# 1. Clean up any legacy 0666 configurations
+rm -f /etc/tmpfiles.d/aldente-charge-limit.conf
+rm -f /usr/local/bin/aldente-hardware-sync
+chmod 0644 "$TARGET" 2>/dev/null || true
+echo "[1/5] Verified root ownership and mode 0644 on hardware register"
 
-# 2. Helper script for boot and udev execution
-mkdir -p /usr/local/bin
-cat > /usr/local/bin/aldente-hardware-sync << 'EOF'
-#!/usr/bin/env bash
-# Automatically applies permissions and restores configured charge limit
-TARGET="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
-if [ ! -f "$TARGET" ]; then
-  GENERIC=$(ls /sys/class/power_supply/BAT*/charge_control_end_threshold 2>/dev/null | head -n 1 || true)
-  [ -n "$GENERIC" ] && TARGET="$GENERIC"
+# 2. Install root-owned, strictly validated helper to /usr/local/libexec/
+mkdir -p /usr/local/libexec
+install -D -m 0755 -o root -g root "$SCRIPT_DIR/system/aldente-set-limit" /usr/local/libexec/aldente-set-limit
+echo "[2/5] Installed root-owned helper: /usr/local/libexec/aldente-set-limit"
+
+# 3. Install Polkit action policy
+if [[ -f "$SCRIPT_DIR/system/org.omarchy.aldente.policy" ]]; then
+  mkdir -p /usr/share/polkit-1/actions
+  install -D -m 0644 -o root -g root "$SCRIPT_DIR/system/org.omarchy.aldente.policy" /usr/share/polkit-1/actions/org.omarchy.aldente.policy
 fi
 
-if [ -f "$TARGET" ]; then
-  chmod 0666 "$TARGET" 2>/dev/null || true
-
-  # Restore saved user limit from config if present, otherwise default to 80%
-  TARGET_LIMIT="80"
-  for cf in /home/*/.local/state/omarchy/aldente/config.json; do
-    if [ -f "$cf" ]; then
-      LIM=$(grep -Po '"charge_limit":\s*\K\d+' "$cf" 2>/dev/null || true)
-      if [ -n "$LIM" ]; then
-        TARGET_LIMIT="$LIM"
-        break
-      fi
-    fi
-  done
-  echo "$TARGET_LIMIT" > "$TARGET" 2>/dev/null || true
-fi
-EOF
-chmod 0755 /usr/local/bin/aldente-hardware-sync
-echo "[2/6] Installed /usr/local/bin/aldente-hardware-sync"
-
-# 3. Persist across boot via systemd-tmpfiles
-mkdir -p /etc/tmpfiles.d
-cat > /etc/tmpfiles.d/aldente-charge-limit.conf <<EOF
-# Omarchy AlDente - Make hardware charge limit writable by userspace
-z $TARGET 0666 root root -
-EOF
-chmod 0644 /etc/tmpfiles.d/aldente-charge-limit.conf
-echo "[3/6] Installed /etc/tmpfiles.d/aldente-charge-limit.conf"
-
-# 4. Persist via udev rules on device events
-mkdir -p /etc/udev/rules.d
-cat > /etc/udev/rules.d/99-aldente-charge-limit.rules <<EOF
-ACTION=="add|change", SUBSYSTEM=="acpi", ATTR{battery_charge_limit}!="", MODE="0666", RUN+="/usr/local/bin/aldente-hardware-sync"
-ACTION=="add|change", SUBSYSTEM=="platform", ATTR{battery_charge_limit}!="", MODE="0666", RUN+="/usr/local/bin/aldente-hardware-sync"
-EOF
-chmod 0644 /etc/udev/rules.d/99-aldente-charge-limit.rules
-echo "[4/6] Installed /etc/udev/rules.d/99-aldente-charge-limit.rules"
-
-# 5. Install system boot service
+# 4. Install system boot service & udev rules
 cat > /etc/systemd/system/aldente-hardware.service <<EOF
 [Unit]
-Description=AlDente Apple SMC Hardware Charge Limit & Restoration
+Description=AlDente Apple SMC Hardware Charge Limit Restoration
 After=sysinit.target local-fs.target
 DefaultDependencies=no
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/aldente-hardware-sync
+ExecStart=/usr/local/libexec/aldente-set-limit --restore
 RemainAfterExit=yes
 
 [Install]
@@ -96,19 +62,28 @@ EOF
 chmod 0644 /etc/systemd/system/aldente-hardware.service
 systemctl daemon-reload
 systemctl enable aldente-hardware.service
-echo "[5/6] Enabled aldente-hardware.service (automatic at boot/login)"
+echo "[3/5] Enabled aldente-hardware.service"
 
-# 6. Passwordless sudoers rule for monk
+mkdir -p /etc/udev/rules.d
+cat > /etc/udev/rules.d/99-aldente-charge-limit.rules <<EOF
+ACTION=="add|change", SUBSYSTEM=="acpi", ATTR{battery_charge_limit}!="", RUN+="/usr/local/libexec/aldente-set-limit --restore"
+ACTION=="add|change", SUBSYSTEM=="platform", ATTR{battery_charge_limit}!="", RUN+="/usr/local/libexec/aldente-set-limit --restore"
+EOF
+chmod 0644 /etc/udev/rules.d/99-aldente-charge-limit.rules
+echo "[4/5] Installed /etc/udev/rules.d/99-aldente-charge-limit.rules"
+
+# 5. Strictly bounded sudoers exception (fixed path, no wildcards, no user-writable paths)
 mkdir -p /etc/sudoers.d
 cat > /etc/sudoers.d/aldente-charge-limit <<EOF
-monk ALL=(root) NOPASSWD: /usr/local/bin/aldente-hardware-sync, /usr/bin/chmod 0666 $TARGET, /home/monk/.config/omarchy/plugins/aldente/system/aldente-root *
+# Omarchy AlDente - Restrict elevation exclusively to the root-owned, strictly validated helper
+ALL ALL=(root) NOPASSWD: /usr/local/libexec/aldente-set-limit [2-9][0-9], /usr/local/libexec/aldente-set-limit 100, /usr/local/libexec/aldente-set-limit --restore
 EOF
 chmod 0440 /etc/sudoers.d/aldente-charge-limit
-echo "[6/6] Installed /etc/sudoers.d/aldente-charge-limit"
+echo "[5/5] Installed /etc/sudoers.d/aldente-charge-limit (restricted to validated thresholds)"
 
-# Run sync now
-/usr/local/bin/aldente-hardware-sync
+# Execute restore now
+/usr/local/libexec/aldente-set-limit --restore
 READBACK=$(cat "$TARGET")
 echo ""
 echo "=== Success! Hardware charge limit verified at ${READBACK}% ==="
-echo "The hardware limit and permissions will permanently persist across every reboot and login."
+echo "The hardware register remains root-owned (mode 0644). Writes are securely brokered."

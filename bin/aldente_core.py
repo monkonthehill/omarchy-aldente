@@ -21,7 +21,7 @@ STATE_FILE = STATE_DIR / "state.json"
 STATS_FILE = STATE_DIR / "stats.json"
 
 SYSFS_APPLE = Path("/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit")
-HELPER_ROOT = "/usr/local/libexec/aldente-root"
+HELPER_ROOT = "/usr/local/libexec/aldente-set-limit"
 
 DEFAULT_CONFIG = {
     "charge_limit": 80,
@@ -68,33 +68,30 @@ def read_hardware_limit():
     return None
 
 def write_hardware_limit(limit):
+    if not isinstance(limit, int) or limit < 20 or limit > 100:
+        return False, f"Invalid limit {limit}: must be an integer between 20 and 100"
+
     f = find_charge_limit_file()
     if not f or not f.exists():
         return False, "No supported hardware charge limit register found in sysfs"
 
-    # 1. Direct write attempt
+    # 1. Direct write attempt (if root or process has write access)
     try:
         f.write_text(f"{limit}\n")
-        # Verify readback
         val = read_hardware_limit()
         if val == limit:
             return True, "Direct write succeeded and verified"
     except PermissionError:
         pass
-    except Exception as e:
+    except Exception:
         pass
 
-    # 2. Privileged helper attempt via local or installed script
-    candidates = [
-        Path("/usr/local/libexec/aldente-root"),
-        Path(__file__).resolve().parent.parent / "system" / "aldente-root"
-    ]
-    helper = next((c for c in candidates if c.exists() and os.access(c, os.X_OK)), None)
-
-    if helper:
+    # 2. Privileged helper attempt via fixed root-owned helper
+    helper = Path("/usr/local/libexec/aldente-set-limit")
+    if helper.exists() and os.access(helper, os.X_OK):
         # Try sudo -n
         try:
-            res = subprocess.run(["sudo", "-n", str(helper), "set-limit", str(limit)],
+            res = subprocess.run(["sudo", "-n", str(helper), str(limit)],
                                  capture_output=True, text=True, timeout=5)
             if res.returncode == 0 and read_hardware_limit() == limit:
                 return True, "Set via sudo helper and verified"
@@ -103,7 +100,7 @@ def write_hardware_limit(limit):
 
         # Try pkexec
         try:
-            res = subprocess.run(["pkexec", str(helper), "set-limit", str(limit)],
+            res = subprocess.run(["pkexec", str(helper), str(limit)],
                                  capture_output=True, text=True, timeout=10)
             if res.returncode == 0 and read_hardware_limit() == limit:
                 return True, "Set via pkexec helper and verified"

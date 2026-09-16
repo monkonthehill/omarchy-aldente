@@ -20,7 +20,7 @@ Execute the hardware setup script once:
 ```bash
 sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh
 ```
-This applies `chmod 0666`, writes the saved threshold, and installs the boot service so permissions survive future reboots.
+This installs the root-owned helper `/usr/local/libexec/aldente-set-limit` and boot services to securely broker writes while keeping the sysfs node root-owned (mode 0644).
 
 ---
 

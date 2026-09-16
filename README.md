@@ -25,10 +25,10 @@ Designed specifically for Apple hardware running Linux (MacBook Pro with T2 / Ap
 - Upon reaching the limit, the charging circuit is disengaged and the system operates strictly on **mains AC pass-through power**, eliminating battery micro-cycling.
 - Writes directly to the Apple SMC charging register (`battery_charge_limit`) or generic Linux ACPI thresholds.
 
-### 2. 5-Layer Automatic Boot Persistence
-- Hardware charge limits and sysfs write permissions persist across every system reboot and user login.
-- Incorporates `systemd-tmpfiles`, `udev` rules, a system boot service, and a dedicated sync script.
-- **Run setup once with sudo**: never prompts for elevated credentials again.
+### 2. Hardened Root Broker & Boot Persistence
+- Hardware charge limits are brokered through a root-owned, strictly validated helper (`/usr/local/libexec/aldente-set-limit`), keeping the kernel sysfs node securely root-owned (mode 0644).
+- Incorporates `udev` rules and a system boot service (`aldente-hardware.service`) to automatically restore the user's saved threshold on boot and wake.
+- **Run setup once with sudo**: installs the root helper and system services; normal daily limit changes require no password prompts.
 
 ### 3. Sailing Mode (Hysteresis Buffer)
 - Permits battery level fluctuation within a configurable buffer (e.g. 75%–80%) while remaining connected to AC power.

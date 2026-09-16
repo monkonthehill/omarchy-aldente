@@ -11,8 +11,9 @@ graph TD
     A[Quickshell UI / Omarchy Shell] -->|IPC / Process Calls| B[aldente-ctl CLI]
     B -->|Shared Core Logic| C[aldente_core.py]
     D[aldente-daemon Background Service] -->|Polling & Watchdog| C
-    C -->|Read Telemetry| E[/sys/class/power_supply/BAT0/]
-    C -->|Write Charge Limit| F[Sysfs Hardware Limit Register]
+    C -->|Read Telemetry 0644| E[/sys/class/power_supply/BAT0/]
+    C -->|Invoke sudo/pkexec| HLP[/usr/local/libexec/aldente-set-limit]
+    HLP -->|Strictly Validated Write 20-100| F[Root-Owned Sysfs Register 0644]
     
     subgraph Hardware Layer
         F --> G[Apple SMC Controller / T2]
@@ -20,9 +21,8 @@ graph TD
     end
     
     subgraph Persistence Layer
-        I[aldente-hardware.service] -->|Boot Restoral| F
-        J[udev Rules] -->|Device Event Trigger| F
-        K[systemd-tmpfiles] -->|Early Permissions 0666| F
+        I[aldente-hardware.service] -->|Boot Restoral --restore| HLP
+        J[udev Rules] -->|Device Event Trigger --restore| HLP
     end
 ```
 

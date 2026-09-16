@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# AlDente Hardware Charge Limit Broker
+# Installed to /usr/local/libexec/aldente-set-limit (root:root 0755)
+# Strictly validates charge threshold arguments before writing to sysfs.
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: aldente-set-limit must be executed with root privileges." >&2
+  exit 1
+fi
+
+SYSFS_APPLE="/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:1c/APP0001:00/battery_charge_limit"
+SYSFS_GENERIC=$(ls /sys/class/power_supply/BAT*/charge_control_end_threshold 2>/dev/null | head -n 1 || true)
+
+TARGET=""
+if [[ -f "$SYSFS_APPLE" ]]; then
+  TARGET="$SYSFS_APPLE"
+elif [[ -n "$SYSFS_GENERIC" && -f "$SYSFS_GENERIC" ]]; then
+  TARGET="$SYSFS_GENERIC"
+fi
+
+if [[ -z "$TARGET" ]]; then
+  echo "Error: No supported hardware charge limit register found in sysfs." >&2
+  exit 1
+fi
+
+ACTION="${1:-}"
+
+if [[ "$ACTION" == "--restore" ]]; then
+  TARGET_LIMIT="80"
+  for cf in /home/*/.local/state/omarchy/aldente/config.json; do
+    if [[ -f "$cf" ]]; then
+      LIM=$(grep -Po '"charge_limit":\s*\K\d+' "$cf" 2>/dev/null || true)
+      if [[ -n "$LIM" && "$LIM" =~ ^([2-9][0-9]|100)$ ]]; then
+        TARGET_LIMIT="$LIM"
+        break
+      fi
+    fi
+  done
+  echo "$TARGET_LIMIT" > "$TARGET"
+  echo "Restored hardware charge limit to ${TARGET_LIMIT}% on $TARGET"
+  exit 0
+fi
+
+# Strictly validate argument: integer between 20 and 100
+if [[ ! "$ACTION" =~ ^([2-9][0-9]|100)$ ]]; then
+  echo "Error: Invalid argument '$ACTION'. Must be an integer between 20 and 100, or '--restore'." >&2
+  exit 1
+fi
+
+LIMIT="$ACTION"
+echo "$LIMIT" > "$TARGET"
+echo "Hardware charge limit set to ${LIMIT}% on $TARGET"
+exit 0
