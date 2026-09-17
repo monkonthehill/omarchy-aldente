@@ -35,6 +35,7 @@ if [[ $EUID -eq 0 ]]; then
   systemctl disable aldente-hardware.service 2>/dev/null || true
   rm -f /etc/systemd/system/aldente-hardware.service
   rm -f /usr/local/libexec/aldente-set-limit
+  rm -f /usr/local/libexec/.aldente-set-limit.tmp.*
   rm -f /usr/share/polkit-1/actions/org.omarchy.aldente.policy
   rm -f /etc/udev/rules.d/99-aldente-charge-limit.rules
   rm -f /etc/sudoers.d/aldente-charge-limit

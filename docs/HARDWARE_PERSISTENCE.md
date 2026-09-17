@@ -43,6 +43,7 @@ Because the Linux kernel resets the SMC or ACPI register back to `100%` on cold 
 
 ### A. Root-Owned Helper (`/usr/local/libexec/aldente-set-limit`)
 - Installed to `/usr/local/libexec/aldente-set-limit` with mode `0755 root:root`.
+- Installed via descriptor-bound `O_NOFOLLOW` file descriptor opening and hardcoded SHA-256 digest verification, atomically published to eliminate TOCTOU race conditions.
 - Sanitizes environment (`PATH`, unsets `IFS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`).
 - Requires root execution (`EUID == 0`) and exactly one argument (`$# == 1`).
 - Dynamically validates that the sysfs register resolves inside `/sys`, is owned by root, and is not world-writable.
@@ -74,13 +75,15 @@ ACTION=="add|change", SUBSYSTEM=="power_supply", TAG+="systemd", ENV{SYSTEMD_WAN
 ACTION=="add|change", SUBSYSTEM=="platform", ATTR{battery_charge_limit}!="", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aldente-hardware.service"
 ACTION=="add|change", SUBSYSTEM=="acpi", ATTR{battery_charge_limit}!="", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aldente-hardware.service"
 ```
-In accordance with modern Linux device management best practices, udev rules do not execute external scripts directly via blocking `RUN+=` directives. Instead, udev tags hardware events for systemd and activates `aldente-hardware.service` through `ENV{SYSTEMD_WANTS}`.
+When AC adapter or battery events occur, udev notifies systemd via `SYSTEMD_WANTS`, running `aldente-hardware.service` to enforce the persisted `/etc/aldente.conf` limit without long-running background loops.
 
-### D. Strictly Bounded Sudoers Rule (`/etc/sudoers.d/aldente-charge-limit`)
+### D. Strictly Bounded Sudoers Drop-in (`/etc/sudoers.d/aldente-charge-limit`)
+To allow the unprivileged AlDente desktop app to update the hardware limit without interactive password prompts, a strictly bounded drop-in rule is created:
 ```sudoers
-# Omarchy AlDente - Restrict elevation exclusively to the root-owned, strictly validated helper
-ALL ALL=(root) NOPASSWD: /usr/local/libexec/aldente-set-limit ^([2-9][0-9]|100|--restore)$
+# Omarchy AlDente - Restrict elevation exclusively to the installing user and strictly validated helper
+<installing_user> ALL=(root) NOPASSWD: /usr/local/libexec/aldente-set-limit ^([2-9][0-9]|100|--restore)$
 ```
+- **Restricted Principal**: Granted exclusively to the validated installing user account (validated against POSIX username conventions, existing user check, and non-root UID), preventing arbitrary local accounts from accessing the broker.
 - **Fixed Path**: Points only to `/usr/local/libexec/aldente-set-limit` (immutable by unprivileged users).
 - **POSIX ERE Regex Matching**: Uses `^([2-9][0-9]|100|--restore)$` to match only exact integer thresholds from `20` to `100`, or `--restore`.
 - **Zero Wildcards**: No glob `*` wildcards and no arbitrary shell invocations.
