@@ -307,9 +307,11 @@ Panel {
               width: parent.width
               text: root.telemetry.is_bypass_holding
                 ? "Holding at " + root.currentLimit + "% limit · Powering directly from AC mains"
-                : (root.telemetry.state === "charging"
-                    ? "Charging to " + root.currentLimit + "% limit · " + (root.telemetry.time_to_full || "calculating...")
-                    : "Discharging on battery · " + (root.telemetry.time_to_empty || "calculating..."))
+                : (root.telemetry.percentage >= root.currentLimit && root.telemetry.state !== "discharging"
+                    ? "At " + root.currentLimit + "% limit · Fully charged"
+                    : ((root.telemetry.state === "charging" || (root.telemetry.ac_online && !root.telemetry.on_battery))
+                        ? "Charging to " + root.currentLimit + "% limit · " + (AlDenteModel.estimateTimeToLimit(root.telemetry, root.currentLimit) || root.telemetry.time_to_limit || root.telemetry.time_to_full || "calculating...")
+                        : "Discharging on battery · " + (AlDenteModel.estimateTimeToEmpty(root.telemetry) || root.telemetry.time_to_empty || "calculating...")))
               font.family: root.fontFamily
               font.pixelSize: Style.space(11)
               color: root.dimForeground

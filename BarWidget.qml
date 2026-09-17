@@ -133,9 +133,15 @@ BarWidget {
     horizontalMargin: 2
 
     tooltipText: {
+      var timeStr = ""
+      if (root.isCharging && root.telemetry.time_to_full && root.telemetry.time_to_full !== "At limit") {
+        timeStr = " · " + root.telemetry.time_to_full + " to limit"
+      } else if (!root.isCharging && root.telemetry.time_to_empty) {
+        timeStr = " · " + root.telemetry.time_to_empty + " remaining"
+      }
       var stateText = root.isHolding
         ? "AC Bypass (Holding at " + (root.telemetry.hardware_limit || 80) + "%)"
-        : (root.isCharging ? "Charging (" + (root.telemetry.power_rate_w || 0) + "W)" : "On Battery")
+        : (root.isCharging ? "Charging (" + (root.telemetry.power_rate_w || 0) + "W)" + timeStr : "On Battery" + timeStr)
       return "AlDente: " + root.batteryLevel + "% · " + stateText + "\nClick to open dashboard"
     }
 

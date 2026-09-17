@@ -46,8 +46,52 @@ function formatMinutes(min) {
   var m = Math.round(Number(min || 0))
   var hrs = Math.floor(m / 60)
   var rem = m % 60
-  if (hrs > 0) return hrs + "h " + rem + "m"
-  return rem + "m"
+  if (hrs > 0 && rem > 0) return hrs + "h " + rem + "m"
+  if (hrs > 0) return hrs + "h"
+  return Math.max(1, rem) + "m"
+}
+
+function estimateTimeToLimit(telemetry, targetLimit) {
+  if (!telemetry) return ""
+  var limit = Number(targetLimit || telemetry.configured_limit || telemetry.hardware_limit || 80)
+  var pct = Number(telemetry.percentage || 0)
+  if (pct >= limit) return "At limit"
+
+  if (telemetry.time_to_limit && telemetry.time_to_limit !== "calculating...") {
+    return telemetry.time_to_limit
+  }
+  if (telemetry.time_to_full && telemetry.time_to_full !== "calculating...") {
+    return telemetry.time_to_full
+  }
+
+  var rate = Number(telemetry.power_rate_w || 0)
+  var fullWh = Number(telemetry.energy_full_wh || 0)
+  var nowWh = Number(telemetry.energy_now_wh || 0)
+
+  if (rate > 0.5 && fullWh > 0) {
+    var targetWh = fullWh * (limit / 100.0)
+    var neededWh = targetWh - nowWh
+    if (neededWh <= 0) return "At limit"
+    var mins = Math.round((neededWh / rate) * 60)
+    return formatMinutes(mins)
+  }
+  return ""
+}
+
+function estimateTimeToEmpty(telemetry) {
+  if (!telemetry) return ""
+  if (telemetry.time_to_empty && telemetry.time_to_empty !== "calculating...") {
+    return telemetry.time_to_empty
+  }
+
+  var rate = Math.abs(Number(telemetry.power_rate_w || 0))
+  var nowWh = Number(telemetry.energy_now_wh || 0)
+
+  if (rate > 0.5 && nowWh > 0) {
+    var mins = Math.round((nowWh / rate) * 60)
+    return formatMinutes(mins)
+  }
+  return ""
 }
 
 function dayLabel(dateStr) {
@@ -80,6 +124,8 @@ if (typeof module !== "undefined") {
     healthColor: healthColor,
     batteryIcon: batteryIcon,
     formatMinutes: formatMinutes,
+    estimateTimeToLimit: estimateTimeToLimit,
+    estimateTimeToEmpty: estimateTimeToEmpty,
     dayLabel: dayLabel,
     parseJson: parseJson
   }

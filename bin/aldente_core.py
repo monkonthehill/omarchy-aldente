@@ -11,6 +11,7 @@ import time
 import shutil
 import argparse
 import subprocess
+import re
 from datetime import datetime, date
 from pathlib import Path
 
@@ -129,6 +130,9 @@ def get_battery_telemetry():
         "on_battery": True,
         "time_to_empty": "",
         "time_to_full": "",
+        "time_to_limit": "",
+        "time_to_full_minutes": None,
+        "time_to_empty_minutes": None,
         "is_bypass_holding": False,
         "hardware_limit": read_hardware_limit(),
         "hardware_supported": find_charge_limit_file() is not None,
@@ -264,6 +268,131 @@ def get_battery_telemetry():
             data["is_bypass_holding"] = True
             data["state"] = "holding"
 
+    # Calculate actual time to complete charge (to active_limit) and time to empty
+    target_limit = active_limit
+    current_pct = data.get("percentage", 0.0)
+    is_charging = (data.get("state") == "charging") or (data.get("ac_online", False) and not data.get("on_battery", True) and current_pct < target_limit)
+
+    if is_charging:
+        if current_pct >= target_limit or data.get("is_bypass_holding"):
+            data["time_to_full"] = "At limit"
+            data["time_to_limit"] = "0m"
+            data["time_to_full_minutes"] = 0
+        else:
+            calc_minutes = None
+            charge_now = None
+            charge_full = None
+            curr_uA = None
+            energy_now = None
+            energy_full = None
+            power_uW = None
+
+            if bat_sysfs:
+                b = Path(bat_sysfs[0])
+                try:
+                    if (b / "charge_now").exists():
+                        charge_now = int((b / "charge_now").read_text().strip())
+                    if (b / "charge_full").exists():
+                        charge_full = int((b / "charge_full").read_text().strip())
+                    if (b / "current_avg").exists():
+                        curr_uA = abs(int((b / "current_avg").read_text().strip()))
+                    if not curr_uA and (b / "current_now").exists():
+                        curr_uA = abs(int((b / "current_now").read_text().strip()))
+                    if (b / "energy_now").exists():
+                        energy_now = int((b / "energy_now").read_text().strip())
+                    if (b / "energy_full").exists():
+                        energy_full = int((b / "energy_full").read_text().strip())
+                    if (b / "power_now").exists():
+                        power_uW = abs(int((b / "power_now").read_text().strip()))
+                except Exception:
+                    pass
+
+            # Priority 1: Sysfs charge (uAh) & current (uA)
+            if charge_full and charge_now is not None and curr_uA and curr_uA > 50000:
+                target_charge = charge_full * (target_limit / 100.0)
+                needed_charge = target_charge - charge_now
+                if needed_charge <= 0:
+                    calc_minutes = 0
+                else:
+                    calc_minutes = round((needed_charge / curr_uA) * 60)
+
+            # Priority 2: Sysfs energy (uWh) & power (uW)
+            elif energy_full and energy_now is not None and power_uW and power_uW > 500000:
+                target_energy = energy_full * (target_limit / 100.0)
+                needed_energy = target_energy - energy_now
+                if needed_energy <= 0:
+                    calc_minutes = 0
+                else:
+                    calc_minutes = round((needed_energy / power_uW) * 60)
+
+            # Priority 3: Energy Wh & power rate W from telemetry
+            elif data.get("energy_full_wh", 0) > 0 and data.get("power_rate_w", 0) > 0.5:
+                ef = data["energy_full_wh"]
+                en = data.get("energy_now_wh", 0.0)
+                rate = data["power_rate_w"]
+                target_wh = ef * (target_limit / 100.0)
+                needed_wh = target_wh - en
+                if needed_wh <= 0:
+                    calc_minutes = 0
+                else:
+                    calc_minutes = round((needed_wh / rate) * 60)
+
+            # Priority 4: Scale UPower time_to_full (which is to 100%) to target_limit
+            if calc_minutes is None and data.get("time_to_full") and data["time_to_full"] not in ["", "calculating..."]:
+                up_str = data["time_to_full"].lower()
+                hrs_match = re.search(r"([\d.]+)\s*(?:hour|hr)", up_str)
+                mins_match = re.search(r"([\d.]+)\s*(?:minute|min)", up_str)
+                up_mins = 0.0
+                if hrs_match:
+                    up_mins += float(hrs_match.group(1)) * 60.0
+                if mins_match:
+                    up_mins += float(mins_match.group(1))
+                if up_mins > 0:
+                    rem_to_100 = max(1.0, 100.0 - current_pct)
+                    rem_to_lim = max(0.0, target_limit - current_pct)
+                    calc_minutes = round(up_mins * (rem_to_lim / rem_to_100))
+
+            if calc_minutes is not None:
+                data["time_to_full_minutes"] = calc_minutes
+                if calc_minutes <= 0:
+                    data["time_to_full"] = "At limit"
+                    data["time_to_limit"] = "0m"
+                else:
+                    h = calc_minutes // 60
+                    m = calc_minutes % 60
+                    formatted = f"{h}h {m}m" if (h > 0 and m > 0) else (f"{h}h" if h > 0 else f"{max(1, m)}m")
+                    data["time_to_full"] = formatted
+                    data["time_to_limit"] = formatted
+
+    elif data.get("on_battery") or data.get("state") == "discharging":
+        if not data.get("time_to_empty") or data["time_to_empty"] == "calculating...":
+            calc_minutes = None
+            if bat_sysfs:
+                b = Path(bat_sysfs[0])
+                try:
+                    if (b / "charge_now").exists() and (b / "current_now").exists():
+                        c_now = int((b / "charge_now").read_text().strip())
+                        c_curr = abs(int((b / "current_now").read_text().strip()))
+                        if c_curr > 50000:
+                            calc_minutes = round((c_now / c_curr) * 60)
+                    elif (b / "energy_now").exists() and (b / "power_now").exists():
+                        e_now = int((b / "energy_now").read_text().strip())
+                        e_pwr = abs(int((b / "power_now").read_text().strip()))
+                        if e_pwr > 500000:
+                            calc_minutes = round((e_now / e_pwr) * 60)
+                except Exception:
+                    pass
+
+            if calc_minutes is None and data.get("energy_now_wh", 0) > 0 and data.get("power_rate_w", 0) > 0.5:
+                calc_minutes = round((data["energy_now_wh"] / data["power_rate_w"]) * 60)
+
+            if calc_minutes is not None and calc_minutes > 0:
+                h = calc_minutes // 60
+                m = calc_minutes % 60
+                formatted = f"{h}h {m}m" if (h > 0 and m > 0) else (f"{h}h" if h > 0 else f"{max(1, m)}m")
+                data["time_to_empty"] = formatted
+                data["time_to_empty_minutes"] = calc_minutes
+
     return data
 
 def get_stats():
@@ -309,6 +438,15 @@ def cmd_status(as_json=False):
     print(f"AlDente Battery Status (Omarchy)")
     print(f"================================")
     print(f"Charge Level:        {combined['percentage']}% ({mode_str})")
+    time_line = ""
+    if combined.get("is_bypass_holding"):
+        time_line = "Holding at limit on AC mains"
+    elif combined.get("state") == "charging" and combined.get("time_to_full"):
+        time_line = f"{combined['time_to_full']} (to {cfg['charge_limit']}% limit)"
+    elif combined.get("time_to_empty"):
+        time_line = f"{combined['time_to_empty']} (remaining on battery)"
+    if time_line:
+        print(f"Estimated Time:      {time_line}")
     print(f"Power Rate:          {combined['power_rate_w']} W  |  Voltage: {combined['voltage_v']} V")
     print(f"Temperature:         {combined['temperature_c']} °C")
     print(f"Hardware Limit:      {combined['hardware_limit']}%  (Target: {cfg['charge_limit']}%)")
