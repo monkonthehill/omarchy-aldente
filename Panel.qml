@@ -566,7 +566,7 @@ Panel {
                   }
 
                   Text {
-                    text: "Active SMC limit is " + (root.telemetry.hardware_limit || 100) + "%. Root write permission needed to enforce " + (root.telemetry.configured_limit || 80) + "%."
+                    text: "Active SMC limit is " + (root.telemetry.hardware_limit || 100) + "%. Authorization needed to enforce " + (root.telemetry.configured_limit || 80) + "%."
                     font.pixelSize: Style.space(10)
                     color: "#ffd699"
                     wrapMode: Text.WordWrap
@@ -574,10 +574,12 @@ Panel {
                   }
 
                   Text {
-                    text: "Run once in terminal: sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh"
+                    text: "Hardware writes are authorized via pkexec or the optional standalone broker package."
                     font.pixelSize: Style.space(9)
                     font.weight: Font.Medium
                     color: root.dimForeground
+                    wrapMode: Text.WordWrap
+                    width: parent.width
                   }
                 }
               }

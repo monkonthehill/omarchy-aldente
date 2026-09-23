@@ -85,24 +85,44 @@ def write_hardware_limit(limit):
     if not f or not f.exists():
         return False, "No supported hardware charge limit register found in sysfs"
 
-    # All hardware charge limit writes are strictly brokered through the root-owned helper
-    helper = Path("/usr/local/libexec/aldente-set-limit")
-    if not helper.exists() or not os.access(helper, os.X_OK):
-        cur = read_hardware_limit()
-        return False, f"Privileged broker {helper} not found or not executable (Current register: {cur}%). Run: sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh"
+    real_target = os.path.realpath(str(f))
+    if not real_target.startswith("/sys/"):
+        return False, f"Security error: Hardware register does not resolve inside /sys: {real_target}"
 
-    cmd = [str(helper), str(limit)] if os.geteuid() == 0 else ["sudo", "-n", str(helper), str(limit)]
+    # 1. If an independently installed root broker is present and verified, use it
+    helper = Path("/usr/local/libexec/aldente-set-limit")
+    if helper.exists() and os.access(helper, os.X_OK):
+        try:
+            st = helper.stat()
+            # Must be owned by root (UID 0) and not world-writable
+            if st.st_uid == 0 and not (st.st_mode & 0o002):
+                cmd = [str(helper), str(limit)] if os.geteuid() == 0 else ["sudo", "-n", str(helper), str(limit)]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if res.returncode == 0:
+                    val = read_hardware_limit()
+                    if val == limit:
+                        return True, f"Hardware charge limit set to {limit}% and verified"
+                    return False, f"Broker succeeded but readback was {val}% (expected {limit}%)"
+        except Exception:
+            pass
+
+    # 2. Native unprivileged execution via system pkexec (Polkit privilege boundary)
+    pkexec_path = shutil.which("pkexec") or "/usr/bin/pkexec"
+    if not os.path.exists(pkexec_path):
+        return False, "pkexec is required for hardware writes but was not found"
+
+    cmd = [pkexec_path, "sh", "-c", f"echo {limit} > '{real_target}'"]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         if res.returncode == 0:
             val = read_hardware_limit()
             if val == limit:
                 return True, f"Hardware charge limit set to {limit}% and verified"
-            return False, f"Broker succeeded but readback was {val}% (expected {limit}%)"
+            return False, f"Write succeeded but readback was {val}% (expected {limit}%)"
         err = res.stderr.strip() or res.stdout.strip() or f"exit code {res.returncode}"
-        return False, f"Failed to set limit via broker: {err}"
+        return False, f"Failed to set limit via pkexec: {err}"
     except Exception as e:
-        return False, f"Execution error invoking broker: {e}"
+        return False, f"Execution error invoking pkexec: {e}"
 
 def get_battery_telemetry():
     """Reads sysfs & upower data and returns structured telemetry."""
@@ -481,7 +501,7 @@ def cmd_set_limit(limit):
     else:
         print(f"Warning: Limit saved in AlDente ({limit}%), but hardware register remains at {cur}%.", file=sys.stderr)
         print(f"Reason: {msg}", file=sys.stderr)
-        print(f"\nTo grant write permissions, run once in terminal:\n  sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh\n", file=sys.stderr)
+        print(f"\nNote: Hardware writes require authorization via pkexec (Polkit) or the standalone broker package in packaging/.\n", file=sys.stderr)
 
 def cmd_sailing(action, delta=None):
     cfg = load_config()
@@ -552,8 +572,7 @@ def cmd_report(fmt="markdown"):
 > [!WARNING]
 > **Hardware Desynchronization Detected**
 > AlDente is configured for **{cfg_lim}%**, but the Linux kernel hardware register (`{telemetry['sysfs_path']}`) is currently set to **{hw_lim}%**.
-> Root write permission is needed to update the Apple SMC register. Run:
-> `sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh`
+> Authorization is needed to update the Apple SMC register (via pkexec or the standalone broker package).
 """
 
     if fmt == "markdown":

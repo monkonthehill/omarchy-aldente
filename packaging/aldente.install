@@ -1,0 +1,37 @@
+post_install() {
+  # Initialize /etc/aldente.conf with default 80% if not present
+  if [ ! -f /etc/aldente.conf ]; then
+    echo "80" > /etc/aldente.conf
+    chmod 0644 /etc/aldente.conf
+    chown root:root /etc/aldente.conf
+  fi
+
+  # Enable systemd service and reload udev
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl enable aldente-hardware.service >/dev/null 2>&1 || true
+  udevadm control --reload-rules >/dev/null 2>&1 || true
+  udevadm trigger >/dev/null 2>&1 || true
+
+  # Restore limit
+  if [ -x /usr/local/libexec/aldente-set-limit ]; then
+    /usr/local/libexec/aldente-set-limit --restore >/dev/null 2>&1 || true
+  fi
+}
+
+post_upgrade() {
+  post_install
+}
+
+pre_remove() {
+  # Restore to 100% on package removal
+  if [ -x /usr/local/libexec/aldente-set-limit ]; then
+    /usr/local/libexec/aldente-set-limit 100 >/dev/null 2>&1 || true
+  fi
+  systemctl disable --now aldente-hardware.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+  rm -f /etc/aldente.conf
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  udevadm control --reload-rules >/dev/null 2>&1 || true
+}

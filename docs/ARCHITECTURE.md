@@ -12,8 +12,10 @@ graph TD
     B -->|Shared Core Logic| C[aldente_core.py]
     D[aldente-daemon Background Service] -->|Polling & Watchdog| C
     C -->|Read Telemetry| E[/sys/class/power_supply/BAT0/]
-    C -->|Invoke sudo -n| HLP[/usr/local/libexec/aldente-set-limit]
-    HLP -->|Strictly Validated Write 20-100| F[Root-Owned Sysfs Register]
+    C -->|Native Privilege Path| PK[pkexec Polkit Dialog]
+    PK -->|Direct Write| F[Root-Owned Sysfs Register]
+    C -.->|Optional Broker Path (sudo -n)| HLP[/usr/local/libexec/aldente-set-limit]
+    HLP -->|Strictly Validated Write 20-100| F
     HLP -->|Atomic State Sync| CONF[/etc/aldente.conf]
     
     subgraph Hardware Layer
@@ -21,7 +23,7 @@ graph TD
         F --> H[ACPI Generic Threshold]
     end
     
-    subgraph Persistence Layer
+    subgraph Optional Packaging Persistence Layer
         I[aldente-hardware.service] -->|Boot & Wake Restoral --restore| HLP
         J[udev Rules] -->|Forward Device Event TAG=systemd| I
     end

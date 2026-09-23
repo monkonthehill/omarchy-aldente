@@ -1,0 +1,4 @@
+# Omarchy AlDente - Forward power/battery device events to systemd service
+ACTION=="add|change", SUBSYSTEM=="power_supply", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aldente-hardware.service"
+ACTION=="add|change", SUBSYSTEM=="platform", ATTR{battery_charge_limit}!="", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aldente-hardware.service"
+ACTION=="add|change", SUBSYSTEM=="acpi", ATTR{battery_charge_limit}!="", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aldente-hardware.service"

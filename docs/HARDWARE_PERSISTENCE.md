@@ -43,7 +43,7 @@ Because the Linux kernel resets the SMC or ACPI register back to `100%` on cold 
 
 ### A. Root-Owned Helper (`/usr/local/libexec/aldente-set-limit`)
 - Installed to `/usr/local/libexec/aldente-set-limit` with mode `0755 root:root`.
-- Installed via descriptor-bound `O_NOFOLLOW` file descriptor opening and hardcoded SHA-256 digest verification, atomically published to eliminate TOCTOU race conditions.
+- Packaged independently and installed via `packaging/PKGBUILD` and `pacman` to eliminate mutable checkout execution and guarantee package ownership.
 - Sanitizes environment (`PATH`, unsets `IFS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`).
 - Requires root execution (`EUID == 0`) and exactly one argument (`$# == 1`).
 - Dynamically validates that the sysfs register resolves inside `/sys`, is owned by root, and is not world-writable.

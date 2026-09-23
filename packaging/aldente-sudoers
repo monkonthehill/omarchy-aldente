@@ -1,0 +1,2 @@
+# Omarchy AlDente - Allow administrative group members passwordless execution of the validated broker
+%wheel ALL=(root) NOPASSWD: /usr/local/libexec/aldente-set-limit ^([2-9][0-9]|100|--restore)$

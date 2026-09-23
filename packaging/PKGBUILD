@@ -1,0 +1,36 @@
+# Maintainer: monk <ns708090100@gmail.com>
+pkgname=omarchy-aldente-helper
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Root-owned hardware charge limit broker and systemd persistence for Omarchy AlDente"
+arch=('any')
+url="https://github.com/monkonthehill/omarchy-aldente"
+license=('MIT')
+depends=('bash' 'systemd' 'sudo')
+install=aldente.install
+source=(
+  "aldente-set-limit::file://${startdir}/../system/aldente-set-limit"
+  "aldente-hardware.service"
+  "99-aldente-charge-limit.rules"
+  "aldente-sudoers"
+)
+sha256sums=(
+  'cd6c3c84d36c5dd73d6c33a9dfd4745617a72bf5ccf3ce6113091b1246306f62'
+  '34a6538dce1622d9c008eb2d81e6c66ee8e6be7a5a5a13da063f62a7cb58efcd'
+  'c3ed33f8cfdda3a7059bfe03eb7d8ccda7bf728706c8e4d946a18d0967f9dbb3'
+  '2407b7a37460511e4987a577165dec5cc31c55182e9fa3c45106a1c2086db444'
+)
+
+package() {
+  # 1. Install root-owned broker to /usr/local/libexec
+  install -D -m 0755 "${srcdir}/aldente-set-limit" "${pkgdir}/usr/local/libexec/aldente-set-limit"
+
+  # 2. Install systemd hardware service
+  install -D -m 0644 "${srcdir}/aldente-hardware.service" "${pkgdir}/etc/systemd/system/aldente-hardware.service"
+
+  # 3. Install udev rule
+  install -D -m 0644 "${srcdir}/99-aldente-charge-limit.rules" "${pkgdir}/etc/udev/rules.d/99-aldente-charge-limit.rules"
+
+  # 4. Install sudoers policy
+  install -D -m 0440 "${srcdir}/aldente-sudoers" "${pkgdir}/etc/sudoers.d/aldente-charge-limit"
+}

@@ -25,10 +25,9 @@ Designed specifically for Apple hardware running Linux (MacBook Pro with T2 / Ap
 - Upon reaching the limit, the charging circuit is disengaged and the system operates strictly on **mains AC pass-through power**, eliminating battery micro-cycling.
 - Writes directly to the Apple SMC charging register (`battery_charge_limit`) or generic Linux ACPI thresholds.
 
-### 2. Hardened Root Broker & Boot Persistence
-- Hardware charge limits are brokered through a root-owned, strictly validated helper (`/usr/local/libexec/aldente-set-limit`), keeping the kernel sysfs node securely root-owned with verified non-world-writable permissions.
-- Incorporates `udev` device event forwarding and a systemd service (`aldente-hardware.service`) to automatically restore the user's saved threshold on boot and wake.
-- **Run setup once with sudo**: installs the root helper and system services; normal daily limit changes require no password prompts.
+### 2. Privilege Boundary & Hardware Persistence
+- **Native Polkit (`pkexec`) Integration**: Works out of the box using standard system authorization prompts for hardware limit changes without requiring custom root scripts from the checkout.
+- **Optional Standalone Broker Package**: For passwordless background daemon operation and systemd boot/wake persistence, a cleanly separated Arch Linux package (`omarchy-aldente-helper`) is provided in `packaging/`.
 
 ### 3. Sailing Mode (Hysteresis Buffer)
 - Permits battery level fluctuation within a configurable buffer (e.g. 75%–80%) while remaining connected to AC power.
@@ -85,9 +84,10 @@ Designed specifically for Apple hardware running Linux (MacBook Pro with T2 / Ap
    ./install.sh
    ```
 
-3. Configure permanent hardware write permissions (run once with `sudo`):
+3. *(Optional)* Install the standalone hardware broker package for passwordless background automation:
    ```bash
-   sudo ./setup-hardware.sh
+   cd ~/.config/omarchy/plugins/aldente/packaging
+   makepkg -si
    ```
 
 ### Removal / Uninstallation
@@ -96,8 +96,11 @@ To safely remove the plugin, service, and CLI shortcuts:
 ```bash
 cd ~/.config/omarchy/plugins/aldente
 ./uninstall.sh
-# Optional: To also remove system boot services and reset hardware limit to 100%:
-sudo ./uninstall.sh
+```
+
+*(Optional)* If you installed the system broker package, remove it with `pacman`:
+```bash
+sudo pacman -R omarchy-aldente-helper
 ```
 
 ---

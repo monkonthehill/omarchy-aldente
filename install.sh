@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $EUID -eq 0 ]]; then
+  echo "Security error: install.sh must not be executed as root or with sudo." >&2
+  echo "Run as your normal user account." >&2
+  exit 1
+fi
+
 plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 echo "=== Installing AlDente Battery Guardian for Omarchy ==="
@@ -25,6 +31,6 @@ if command -v omarchy >/dev/null 2>&1; then
 fi
 
 echo "=== AlDente User Installation Complete! ==="
-echo "To configure hardware AC bypass, run once with sudo:"
-echo "    sudo $plugin_dir/setup-hardware.sh"
+echo "Hardware charge limits are supported out-of-the-box via system pkexec."
+echo "Optional: For passwordless background daemon automation, see packaging/README.md."
 echo "Run 'aldente status' to check live status."

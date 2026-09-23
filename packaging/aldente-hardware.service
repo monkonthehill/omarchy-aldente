@@ -1,0 +1,12 @@
+[Unit]
+Description=AlDente Battery Hardware Charge Limit Restoration
+After=sysinit.target local-fs.target
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/aldente-set-limit --restore
+RemainAfterExit=no
+
+[Install]
+WantedBy=basic.target sleep.target

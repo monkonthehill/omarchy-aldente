@@ -9,18 +9,19 @@ This guide provides step-by-step diagnostic and troubleshooting instructions for
 ### Symptom
 The UI displays a notice:
 > **Hardware Desynchronized**  
-> Active SMC limit is 100%. Root write permission needed to enforce 80%.  
-> *Run once in terminal: sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh*
+> Active SMC limit is 100%. Authorization needed to enforce 80%.  
+> *Hardware writes are authorized via pkexec or the optional standalone broker package.*
 
 ### Cause
-The Apple SMC kernel register `/sys/devices/.../battery_charge_limit` is owned by `root` with restricted permissions. Because unprivileged userspace processes cannot modify kernel registers directly, your requested limit (e.g. 80%) cannot be applied without the secure broker.
+The Apple SMC kernel register `/sys/devices/.../battery_charge_limit` is owned by `root` with restricted permissions. Changing the hardware register requires authorization via Polkit (`pkexec`) or the optional standalone package broker.
 
 ### Solution
-Execute the hardware setup script once:
+1. **Interactive Authorization**: Changing the limit from the Omarchy status bar or running `aldente set-limit 80` will automatically open the system authorization prompt (`pkexec`).
+2. **Passwordless Background Automation**: If you want background automation (sailing mode, thermal guard) to adjust limits without interactive prompts, install the standalone package:
 ```bash
-sudo ~/.config/omarchy/plugins/aldente/setup-hardware.sh
+cd ~/.config/omarchy/plugins/aldente/packaging
+makepkg -si
 ```
-This installs the root-owned helper `/usr/local/libexec/aldente-set-limit` and systemd persistence to securely broker writes while keeping the sysfs node root-owned and non-world-writable.
 
 ---
 
