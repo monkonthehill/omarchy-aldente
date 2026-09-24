@@ -95,7 +95,7 @@ def write_hardware_limit(limit):
             st = helper.stat()
             # Must be owned by root (UID 0) and not world-writable
             if st.st_uid == 0 and not (st.st_mode & 0o002):
-                cmd = [str(helper), str(limit)] if os.geteuid() == 0 else ["sudo", "-n", str(helper), str(limit)]
+                cmd = [str(helper), str(limit)] if os.geteuid() == 0 else ["/usr/bin/sudo", "-n", str(helper), str(limit)]
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
                 if res.returncode == 0:
                     val = read_hardware_limit()

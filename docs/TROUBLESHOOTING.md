@@ -63,7 +63,7 @@ systemctl status aldente-hardware.service
 Expected output:
 ```text
 Active: active (exited) since ...
-Process: ... ExecStart=/usr/local/bin/aldente-hardware-sync (code=exited, status=0/SUCCESS)
+Process: ... ExecStart=/usr/local/libexec/aldente-set-limit --restore (code=exited, status=0/SUCCESS)
 ```
 
 ---
