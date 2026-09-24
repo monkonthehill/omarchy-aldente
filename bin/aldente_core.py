@@ -8,7 +8,6 @@ import os
 import glob
 import json
 import time
-import shutil
 import argparse
 import subprocess
 import re
@@ -107,13 +106,24 @@ def write_hardware_limit(limit):
             pass
 
     # 2. Native unprivileged execution via system pkexec (Polkit privilege boundary)
-    pkexec_path = shutil.which("pkexec") or "/usr/bin/pkexec"
-    if not os.path.exists(pkexec_path):
-        return False, "pkexec is required for hardware writes but was not found"
+    # Use only fixed absolute paths to prevent PATH-injection attacks:
+    #   - /usr/bin/pkexec: fixed system binary, never resolved via caller PATH
+    #   - /usr/bin/tee: fixed root-side executable with argv-only validated target
+    #   - No shell (sh -c) is invoked; the validated limit is passed via stdin
+    PKEXEC = "/usr/bin/pkexec"
+    TEE = "/usr/bin/tee"
+    if not os.path.isfile(PKEXEC) or not os.access(PKEXEC, os.X_OK):
+        return False, f"pkexec ({PKEXEC}) is required for hardware writes but was not found"
 
-    cmd = [pkexec_path, "sh", "-c", f"echo {limit} > '{real_target}'"]
+    cmd = [PKEXEC, TEE, "--", real_target]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        res = subprocess.run(
+            cmd,
+            input=f"{limit}\n",
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         if res.returncode == 0:
             val = read_hardware_limit()
             if val == limit:
