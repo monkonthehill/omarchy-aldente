@@ -17,15 +17,38 @@ mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user" "$HOME/.local/state/oma
 chmod +x "$plugin_dir/bin/aldente-ctl" "$plugin_dir/bin/aldente-daemon" \
          "$plugin_dir/setup-hardware.sh" "$plugin_dir/uninstall.sh"
 
-ln -sf "$plugin_dir/bin/aldente-ctl" "$HOME/.local/bin/aldente"
-ln -sf "$plugin_dir/bin/aldente-ctl" "$HOME/.local/bin/aldente-ctl"
+# 2. Symlink CLI shortcuts safely (guard against overwriting unrelated user files)
+cli_target="$plugin_dir/bin/aldente-ctl"
+for link_name in "aldente" "aldente-ctl"; do
+  link_path="$HOME/.local/bin/$link_name"
+  if [[ -L "$link_path" ]]; then
+    target=$(readlink -f "$link_path" 2>/dev/null || true)
+    if [[ "$target" == "$cli_target" ]]; then
+      ln -sf "$cli_target" "$link_path"
+    else
+      echo "Notice: $link_path points to an existing symlink ($target); leaving intact."
+    fi
+  elif [[ -e "$link_path" ]]; then
+    echo "Notice: $link_path already exists as a user-managed file; skipping."
+  else
+    ln -s "$cli_target" "$link_path"
+    echo "[✓] Created CLI shortcut: $link_path"
+  fi
+done
 
-# 2. Enable user systemd service
-cp "$plugin_dir/system/aldente-monitor.service" "$HOME/.config/systemd/user/aldente-monitor.service"
-systemctl --user daemon-reload
-systemctl --user enable --now aldente-monitor.service
+# 3. User systemd service (guard against replacing unmanaged existing service)
+service_src="$plugin_dir/system/aldente-monitor.service"
+service_dest="$HOME/.config/systemd/user/aldente-monitor.service"
+if [[ -f "$service_dest" ]] && ! cmp -s "$service_src" "$service_dest"; then
+  echo "Notice: $service_dest already exists with custom configuration; preserving existing file."
+else
+  cp "$service_src" "$service_dest"
+  systemctl --user daemon-reload 2>/dev/null || true
+  systemctl --user enable --now aldente-monitor.service 2>/dev/null || true
+  echo "[✓] Configured user daemon: aldente-monitor.service"
+fi
 
-# 3. Validate plugin schema
+# 4. Validate plugin schema
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin validate "$plugin_dir"
 fi
