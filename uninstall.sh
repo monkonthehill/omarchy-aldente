@@ -12,7 +12,9 @@ echo "=== AlDente Battery Guardian - Uninstaller ==="
 # 1. Stop and disable user daemon
 service_file="$HOME/.config/systemd/user/aldente-monitor.service"
 plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-if [[ -f "$service_file" ]]; then
+if [[ -L "$service_file" ]]; then
+  echo "[1/4] Notice: $service_file is an unmanaged symlink; left intact."
+elif [[ -f "$service_file" ]]; then
   if cmp -s "$plugin_dir/system/aldente-monitor.service" "$service_file"; then
     if systemctl --user is-active --quiet aldente-monitor.service 2>/dev/null; then
       echo "Stopping user daemon..."

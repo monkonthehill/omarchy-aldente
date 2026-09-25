@@ -36,13 +36,22 @@ for link_name in "aldente" "aldente-ctl"; do
   fi
 done
 
-# 3. User systemd service (guard against replacing unmanaged existing service)
+# 3. User systemd service (guard against replacing unmanaged existing service or following symlinks)
 service_src="$plugin_dir/system/aldente-monitor.service"
 service_dest="$HOME/.config/systemd/user/aldente-monitor.service"
-if [[ -f "$service_dest" ]] && ! cmp -s "$service_src" "$service_dest"; then
-  echo "Notice: $service_dest already exists with custom configuration; preserving existing file."
+if [[ -L "$service_dest" ]]; then
+  echo "Notice: $service_dest is a symlink; preserving unmanaged target and skipping service installation."
+elif [[ -e "$service_dest" ]]; then
+  if cmp -s "$service_src" "$service_dest"; then
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user enable --now aldente-monitor.service 2>/dev/null || true
+    echo "[✓] Configured user daemon: aldente-monitor.service"
+  else
+    echo "Notice: $service_dest already exists with custom configuration; preserving existing file."
+  fi
 else
-  cp "$service_src" "$service_dest"
+  # Use --no-dereference to guarantee we never follow a symlink, write directly to regular file
+  cp --no-dereference "$service_src" "$service_dest"
   systemctl --user daemon-reload 2>/dev/null || true
   systemctl --user enable --now aldente-monitor.service 2>/dev/null || true
   echo "[✓] Configured user daemon: aldente-monitor.service"
